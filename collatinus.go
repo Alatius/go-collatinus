@@ -5,9 +5,9 @@ package collatinus
 
 // Lemmatizer holds all loaded data and provides the public API.
 type Lemmatizer struct {
-	// morphos stores morphological descriptions indexed 1-based.
-	// Index 0 is unused; morphos[1] = "nominatif singulier", etc.
-	morphos []string
+	// morphos stores morphological descriptions per language, each indexed 1-based.
+	// Index 0 is unused; morphos["fr"][1] = "nominatif singulier", etc.
+	morphos map[string][]string
 
 	// models maps model name → *Model.
 	models map[string]*Model
@@ -41,7 +41,7 @@ type Lemmatizer struct {
 // and returns a ready-to-use Lemmatizer.
 func New(dataDir string) (*Lemmatizer, error) {
 	l := &Lemmatizer{
-		morphos:      []string{""}, // index 0 unused; 1-based
+		morphos:      make(map[string][]string),
 		models:       make(map[string]*Model),
 		lemmas:       make(map[string]*Lemma),
 		desinences:   make(map[string][]*Desinence),
@@ -82,13 +82,32 @@ func New(dataDir string) (*Lemmatizer, error) {
 	return l, nil
 }
 
-// Morpho returns the morphological description string for 1-based index m.
+// Morpho returns the French morphological description string for 1-based index m.
 // Mirrors Lemmat::morpho.
 func (l *Lemmatizer) Morpho(m int) string {
-	if m < 1 || m >= len(l.morphos) {
-		return ""
+	return l.MorphoLang(m, "fr")
+}
+
+// MorphoLang returns the morphological description for 1-based index m
+// in the given language. Falls back to "fr" if lang is not available.
+func (l *Lemmatizer) MorphoLang(m int, lang string) string {
+	if s, ok := l.morphos[lang]; ok && m >= 1 && m < len(s) {
+		return s[m]
 	}
-	return l.morphos[m]
+	if s := l.morphos["fr"]; m >= 1 && m < len(s) {
+		return s[m]
+	}
+	return ""
+}
+
+// MorphoLanguages returns the language codes for which morphological
+// descriptions are available (e.g. "fr", "en", "es", "k9").
+func (l *Lemmatizer) MorphoLanguages() []string {
+	out := make([]string, 0, len(l.morphos))
+	for k := range l.morphos {
+		out = append(out, k)
+	}
+	return out
 }
 
 // Lemma looks up a lemma by its normalized key.

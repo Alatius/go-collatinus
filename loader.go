@@ -9,37 +9,55 @@ import (
 	"strings"
 )
 
-// loadMorphos reads data/morphos.fr into l.morphos (1-based).
+// loadMorphos reads all data/morphos.* files into l.morphos (1-based, per language).
 // Format: "n:description" (1-indexed), stops at "! --- " separator.
 // Mirrors LemCore::lisMorphos.
 func (l *Lemmatizer) loadMorphos(dataDir string) error {
-	f, err := os.Open(filepath.Join(dataDir, "morphos.fr"))
+	matches, err := filepath.Glob(filepath.Join(dataDir, "morphos.*"))
 	if err != nil {
-		// fall back to morphos.la for compatibility
-		f2, err2 := os.Open(filepath.Join(dataDir, "morphos.la"))
-		if err2 != nil {
-			return fmt.Errorf("open morphos.fr: %w", err)
-		}
-		f = f2
+		return err
 	}
-	defer f.Close()
 
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := sc.Text()
-		if strings.HasPrefix(line, "! --- ") {
-			break
-		}
-		if strings.HasPrefix(line, "!") {
+	for _, path := range matches {
+		ext := filepath.Ext(path)
+		if ext == "" || ext == ".la" {
 			continue
 		}
-		idx := strings.Index(line, ":")
-		if idx < 0 {
-			continue
+		lang := ext[1:] // e.g. "fr", "en", "es", "k9"
+
+		f, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", filepath.Base(path), err)
 		}
-		l.morphos = append(l.morphos, line[idx+1:])
+
+		descs := []string{""} // index 0 unused; 1-based
+		sc := bufio.NewScanner(f)
+		for sc.Scan() {
+			line := sc.Text()
+			if strings.HasPrefix(line, "! --- ") {
+				break
+			}
+			if strings.HasPrefix(line, "!") {
+				continue
+			}
+			idx := strings.Index(line, ":")
+			if idx < 0 {
+				continue
+			}
+			descs = append(descs, line[idx+1:])
+		}
+		scanErr := sc.Err()
+		f.Close()
+		if scanErr != nil {
+			return scanErr
+		}
+		l.morphos[lang] = descs
 	}
-	return sc.Err()
+
+	if _, ok := l.morphos["fr"]; !ok {
+		return fmt.Errorf("morphos.fr not found in %s", dataDir)
+	}
+	return nil
 }
 
 // loadModels reads bin/data/modeles.la and populates l.models.

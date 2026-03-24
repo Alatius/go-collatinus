@@ -52,6 +52,7 @@ func (l *Lemmatizer) decontracte(d string) string {
 // 2. radical+desinence combinations
 // Mirrors Lemmat::lemmatise.
 func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
+	frMorphos := l.morphos["fr"] // for bounds checking
 	// Compute vowel counts from original form (before deramise)
 	lower := strings.ToLower(form)
 	cntV := strings.Count(lower, "v")
@@ -137,7 +138,7 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 				if lemma.isExclusiveIrreg(de.MorphoNum) {
 					continue
 				}
-				if de.MorphoNum < 1 || de.MorphoNum >= len(l.morphos) {
+				if de.MorphoNum < 1 || de.MorphoNum >= len(frMorphos) {
 					continue
 				}
 

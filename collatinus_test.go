@@ -15,8 +15,8 @@ func TestNew(t *testing.T) {
 	if l == nil {
 		t.Fatal("New returned nil Lemmatizer")
 	}
-	t.Logf("Loaded %d morphos, %d models, %d lemmas, %d desinences, %d radicals, %d irregs",
-		len(l.morphos)-1, len(l.models), len(l.lemmas),
+	t.Logf("Loaded %d morpho languages (%d descriptions), %d models, %d lemmas, %d desinences, %d radicals, %d irregs",
+		len(l.morphos), len(l.morphos["fr"])-1, len(l.models), len(l.lemmas),
 		len(l.desinences), len(l.radicals), len(l.irregs))
 }
 
@@ -25,6 +25,40 @@ func TestMorpho(t *testing.T) {
 	got := l.Morpho(1)
 	if got != "nominatif singulier" {
 		t.Errorf("Morpho(1) = %q, want %q", got, "nominatif singulier")
+	}
+}
+
+func TestMorphoLang(t *testing.T) {
+	l, _ := New(dataDir)
+	// French (default)
+	if got := l.MorphoLang(1, "fr"); got != "nominatif singulier" {
+		t.Errorf("MorphoLang(1, fr) = %q, want %q", got, "nominatif singulier")
+	}
+	// English
+	if got := l.MorphoLang(1, "en"); got != "nominative singular" {
+		t.Errorf("MorphoLang(1, en) = %q, want %q", got, "nominative singular")
+	}
+	// Unknown language falls back to French
+	if got := l.MorphoLang(1, "xx"); got != "nominatif singulier" {
+		t.Errorf("MorphoLang(1, xx) = %q, want French fallback %q", got, "nominatif singulier")
+	}
+	// Out of bounds
+	if got := l.MorphoLang(0, "fr"); got != "" {
+		t.Errorf("MorphoLang(0, fr) = %q, want empty", got)
+	}
+}
+
+func TestMorphoLanguages(t *testing.T) {
+	l, _ := New(dataDir)
+	langs := l.MorphoLanguages()
+	have := make(map[string]bool, len(langs))
+	for _, lang := range langs {
+		have[lang] = true
+	}
+	for _, want := range []string{"fr", "en", "es"} {
+		if !have[want] {
+			t.Errorf("MorphoLanguages() missing %q, got %v", want, langs)
+		}
 	}
 }
 
