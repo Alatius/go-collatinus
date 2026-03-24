@@ -2,9 +2,9 @@
 //
 // Endpoints:
 //
-//	GET  /api/lemmatize?form=<word>[&sentence_start=true]
-//	POST /api/lemmatize/text   body: {"text":"..."}
-//	GET  /api/inflection?lemma=<key>
+//	GET  /api/lemmatize?form=<word>[&sentence_start=true][&lang=fr]
+//	POST /api/lemmatize/text   body: {"text":"...", "lang":"fr"}
+//	GET  /api/inflection?lemma=<key>[&lang=fr]
 //	GET  /api/languages
 package main
 
@@ -23,11 +23,12 @@ import (
 // ---- JSON response types ------------------------------------------------
 
 type lemmaJSON struct {
-	Key        string `json:"key"`
-	Form       string `json:"form"`
-	POS        string `json:"pos"`
-	MorphoInfo string `json:"morpho_info"`
-	HomonymNum int    `json:"homonym_num,omitempty"`
+	Key         string `json:"key"`
+	Form        string `json:"form"`
+	POS         string `json:"pos"`
+	MorphoInfo  string `json:"morpho_info"`
+	HomonymNum  int    `json:"homonym_num,omitempty"`
+	Translation string `json:"translation,omitempty"`
 }
 
 type formJSON struct {
@@ -56,8 +57,9 @@ type lemmatizeTextResponse struct {
 }
 
 type inflectionResponse struct {
-	Lemma *lemmaJSON         `json:"lemma"`
-	Cells map[string][]string `json:"cells"`
+	Lemma  *lemmaJSON          `json:"lemma"`
+	Cells  map[string][]string `json:"cells"`
+	Labels map[string]string   `json:"labels"`
 }
 
 type languagesResponse struct {
@@ -97,24 +99,32 @@ func posName(p collatinus.PartOfSpeech) string {
 	}
 }
 
-func toLemmaJSON(l *collatinus.Lemma) lemmaJSON {
+func parseLang(r *http.Request) string {
+	if lang := r.URL.Query().Get("lang"); lang != "" {
+		return lang
+	}
+	return "fr"
+}
+
+func toLemmaJSON(l *collatinus.Lemma, lang string) lemmaJSON {
 	return lemmaJSON{
-		Key:        l.Key,
-		Form:       l.Gr,
-		POS:        posName(l.POS),
-		MorphoInfo: l.IndMorph,
-		HomonymNum: l.HomonymNum,
+		Key:         l.Key,
+		Form:        l.Gr,
+		POS:         posName(l.POS),
+		MorphoInfo:  l.IndMorph,
+		HomonymNum:  l.HomonymNum,
+		Translation: l.Translation(lang),
 	}
 }
 
-func toAnalysesJSON(analyses map[*collatinus.Lemma][]collatinus.Analysis) []analysisJSON {
+func toAnalysesJSON(lem *collatinus.Lemmatizer, analyses map[*collatinus.Lemma][]collatinus.Analysis, lang string) []analysisJSON {
 	out := make([]analysisJSON, 0, len(analyses))
 	for lemma, forms := range analyses {
 		fj := make([]formJSON, 0, len(forms))
 		for _, f := range forms {
 			fj = append(fj, formJSON{
 				FormWithMarks:     f.FormWithMarks,
-				MorphoDescription: f.MorphoDescription,
+				MorphoDescription: lem.MorphoLang(f.MorphoIndex, lang),
 				MorphoIndex:       f.MorphoIndex,
 			})
 		}
@@ -122,7 +132,7 @@ func toAnalysesJSON(analyses map[*collatinus.Lemma][]collatinus.Analysis) []anal
 		sort.Slice(fj, func(i, j int) bool {
 			return fj[i].MorphoIndex < fj[j].MorphoIndex
 		})
-		lj := toLemmaJSON(lemma)
+		lj := toLemmaJSON(lemma, lang)
 		out = append(out, analysisJSON{Lemma: lj, Forms: fj})
 	}
 	// sort by lemma key for deterministic output
@@ -158,6 +168,7 @@ func handleLemmatizeWord(lem *collatinus.Lemmatizer) http.HandlerFunc {
 			return
 		}
 		sentenceStart, _ := strconv.ParseBool(r.URL.Query().Get("sentence_start"))
+		lang := parseLang(r)
 
 		analyses := lem.LemmatizeWord(form, sentenceStart)
 		status := http.StatusOK
@@ -166,7 +177,7 @@ func handleLemmatizeWord(lem *collatinus.Lemmatizer) http.HandlerFunc {
 		}
 		writeJSON(w, status, lemmatizeWordResponse{
 			Form:     form,
-			Analyses: toAnalysesJSON(analyses),
+			Analyses: toAnalysesJSON(lem, analyses, lang),
 		})
 	}
 }
@@ -179,10 +190,15 @@ func handleLemmatizeText(lem *collatinus.Lemmatizer) http.HandlerFunc {
 		}
 		var body struct {
 			Text string `json:"text"`
+			Lang string `json:"lang"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
 			writeError(w, http.StatusBadRequest, "body must be JSON with a non-empty 'text' field")
 			return
+		}
+		lang := parseLang(r)
+		if lang == "fr" && body.Lang != "" {
+			lang = body.Lang
 		}
 
 		results := lem.LemmatizeText(body.Text)
@@ -190,7 +206,7 @@ func handleLemmatizeText(lem *collatinus.Lemmatizer) http.HandlerFunc {
 		for _, res := range results {
 			out = append(out, tokenResultJSON{
 				Token:    res.Token,
-				Analyses: toAnalysesJSON(res.Analyses),
+				Analyses: toAnalysesJSON(lem, res.Analyses, lang),
 			})
 		}
 		writeJSON(w, http.StatusOK, lemmatizeTextResponse{Results: out})
@@ -213,14 +229,18 @@ func handleInflection(lem *collatinus.Lemmatizer) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, fmt.Sprintf("lemma %q not found", key))
 			return
 		}
+		lang := parseLang(r)
 		table := lem.InflectionTable(lemma)
 
 		cells := make(map[string][]string, len(table.Cells))
+		labels := make(map[string]string, len(table.Cells))
 		for idx, forms := range table.Cells {
-			cells[strconv.Itoa(idx)] = forms
+			key := strconv.Itoa(idx)
+			cells[key] = forms
+			labels[key] = lem.MorphoLang(idx, lang)
 		}
-		lj := toLemmaJSON(lemma)
-		writeJSON(w, http.StatusOK, inflectionResponse{Lemma: &lj, Cells: cells})
+		lj := toLemmaJSON(lemma, lang)
+		writeJSON(w, http.StatusOK, inflectionResponse{Lemma: &lj, Cells: cells, Labels: labels})
 	}
 }
 

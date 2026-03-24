@@ -93,9 +93,11 @@ func (l *Lemmatizer) LemmatizeText(text string) []LemmatizationResult
 
 // Lookup
 func (l *Lemmatizer) Lemma(key string) *Lemma
-func (l *Lemmatizer) Morpho(index int) string
+func (l *Lemmatizer) Morpho(index int) string               // French descriptions
+func (l *Lemmatizer) MorphoLang(index int, lang string) string // any loaded language, falls back to French
+func (l *Lemmatizer) MorphoLanguages() []string              // e.g. ["fr","en","es","k9"]
 func (l *Lemmatizer) InflectionTable(lemma *Lemma) *InflectionTable
-func (l *Lemmatizer) Languages() map[string]string
+func (l *Lemmatizer) Languages() map[string]string           // translation languages
 
 // Lemma
 func (l *Lemma) Translation(lang string) string
