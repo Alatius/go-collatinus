@@ -69,6 +69,9 @@ func New(dataDir string) (*Lemmatizer, error) {
 	if err := l.loadLexicon(dataDir); err != nil {
 		return nil, err
 	}
+	if err := l.loadExtendedLexicon(dataDir); err != nil {
+		return nil, err
+	}
 	if err := l.loadTranslations(dataDir); err != nil {
 		return nil, err
 	}

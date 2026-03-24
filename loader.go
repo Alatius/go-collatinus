@@ -317,9 +317,25 @@ func (l *Lemmatizer) substituteVars(line string) string {
 // loadLexicon reads bin/data/lemmes.la and builds l.lemmas and l.radicals.
 // Mirrors Lemmat::lisLexique.
 func (l *Lemmatizer) loadLexicon(dataDir string) error {
-	f, err := os.Open(filepath.Join(dataDir, "lemmes.la"))
+	return l.loadLexiconFile(filepath.Join(dataDir, "lemmes.la"))
+}
+
+// loadExtendedLexicon reads bin/data/lem_ext.la if present.
+// Same format as lemmes.la but entries do not overwrite existing lemmas.
+func (l *Lemmatizer) loadExtendedLexicon(dataDir string) error {
+	path := filepath.Join(dataDir, "lem_ext.la")
+	if _, err := os.Stat(path); err != nil {
+		return nil // file not present, not an error
+	}
+	return l.loadLexiconFile(path)
+}
+
+// loadLexiconFile reads a single lemmes.la-format file and registers
+// its lemmas and radicals. Existing lemmas are not overwritten.
+func (l *Lemmatizer) loadLexiconFile(path string) error {
+	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("open lemmes.la: %w", err)
+		return fmt.Errorf("open %s: %w", filepath.Base(path), err)
 	}
 	defer f.Close()
 
@@ -332,6 +348,11 @@ func (l *Lemmatizer) loadLexicon(dataDir string) error {
 
 		lemma := newLemma(line)
 		if lemma == nil {
+			continue
+		}
+
+		// Do not overwrite existing lemmas
+		if _, exists := l.lemmas[lemma.Key]; exists {
 			continue
 		}
 
@@ -409,22 +430,24 @@ func (l *Lemmatizer) buildRadicals(lemma *Lemma) {
 	}
 }
 
-// loadTranslations reads all lemmes.XX files from dataDir.
+// loadTranslations reads all lemmes.XX and lem_ext.XX files from dataDir.
 // Mirrors Lemmat::lisTraductions.
 func (l *Lemmatizer) loadTranslations(dataDir string) error {
-	matches, err := filepath.Glob(filepath.Join(dataDir, "lemmes.*"))
-	if err != nil {
-		return err
-	}
-	for _, path := range matches {
-		ext := filepath.Ext(path)
-		if ext == ".la" || ext == "" {
-			continue
+	for _, pattern := range []string{"lemmes.*", "lem_ext.*"} {
+		matches, err := filepath.Glob(filepath.Join(dataDir, pattern))
+		if err != nil {
+			return err
 		}
-		lang := ext[1:] // strip leading "."
-		if err := l.loadTranslationFile(path, lang); err != nil {
-			// Non-fatal: skip missing/malformed files
-			continue
+		for _, path := range matches {
+			ext := filepath.Ext(path)
+			if ext == ".la" || ext == "" {
+				continue
+			}
+			lang := ext[1:] // strip leading "."
+			if err := l.loadTranslationFile(path, lang); err != nil {
+				// Non-fatal: skip missing/malformed files
+				continue
+			}
 		}
 	}
 	return nil
