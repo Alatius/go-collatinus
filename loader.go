@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -311,21 +312,27 @@ func (l *Lemmatizer) parseModel(lines []string) *Model {
 	return m
 }
 
+// reVarRef matches a $variable reference with an optional prefix after a : or ;.
+// Mirrors the C++ regex: [:;]([\w]*)\+{0,1}(\$\w+)
+// Go's \w is ASCII-only, so we use \pL (Unicode letter) to match Latin characters
+// with diacritics (e.g., ānd, īssĭm, ūr) that appear as prefixes in modeles.la.
+var reVarRef = regexp.MustCompile(`[:;]([0-9\pL]*)\+?(\$\w+)`)
+
 // substituteVars replaces $variable references in line with their stored values.
-// Mirrors the variable substitution loop in Modele::Modele.
+// Mirrors the variable substitution loop in Modele::Modele: when a variable has
+// a prefix (e.g., "ānd$lupus"), the prefix is inserted after each semicolon in
+// the variable's value so it applies to every element.
 func (l *Lemmatizer) substituteVars(line string) string {
-	for strings.Contains(line, "$") {
-		d := strings.Index(line, "$")
-		f := strings.Index(line[d:], ";")
-		var varName string
-		if f < 0 {
-			varName = line[d:]
-		} else {
-			varName = line[d : d+f]
-		}
+	for reVarRef.MatchString(line) {
+		m := reVarRef.FindStringSubmatch(line)
+		varName := m[2]
 		val, ok := l.variables[varName]
 		if !ok {
-			break // unknown variable, avoid infinite loop
+			break
+		}
+		pre := m[1]
+		if pre != "" {
+			val = strings.Replace(val, ";", ";"+pre, -1)
 		}
 		line = strings.Replace(line, varName, val, 1)
 	}
