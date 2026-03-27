@@ -197,6 +197,82 @@ func detectPOS(indMorph string) PartOfSpeech {
 	}
 }
 
+// indMorphTranslations maps French terms in IndMorph to their English equivalents.
+// Order matters: longer / more specific patterns must come first so that
+// shorter patterns (e.g. " de ") do not consume text that a longer pattern
+// would have matched.
+var indMorphTranslations = []struct{ fr, en string }{
+	// ---- Full unique phrases (most specific first) ----
+	{"v. défectif utilisé seulement à la 3ème personne du singulier", "defective v. used only in 3rd person singular"},
+	{"Pas de nominatif", "No nominative"},
+	{"généralement au plur", "generally plural"},
+	{"souvent au pluriel", "often plural"},
+	{"surtout au pl.", "mostly pl."},
+	{"toujours au pluriel", "always plural"},
+	{"aussi en 2 mots", "also as 2 words"},
+	{"comparatif neutre", "neuter comparative"},
+	{"averbial", "adverbial"},
+	{"suivi du nom.", "followed by nom."},
+
+	{"inusité au nom.", "unused in nom."},
+	{"inusité", "unused"},
+
+	// ---- "<description> de <word>" phrases (before generic " de ") ----
+	{"part. passé de l'", "past part. of "},
+	{"part. passé de ", "past part. of "},
+	{"2ème p. s. de ", "2nd p. s. of "},
+	{"part. fut. de ", "fut. part. of "},
+	{"fut. ant. de ", "fut. ant. of "},
+	{"acc. grec de ", "Greek acc. of "},
+	{"acc. fem. sg. de ", "acc. fem. sg. of "},
+	{"abl. n. de ", "abl. n. of "},
+	{"abréviation de ", "abbreviation of "},
+	{"supin en u de ", "u-supine of "},
+	{"supin de ", "supine of "},
+	{"comp. de ", "comp. of "},
+	{"inf. de ", "inf. of "},
+	{"acc. de ", "acc. of "},
+	{"passif de ", "passive of "},
+
+	// ---- Abbreviations and terms ----
+	{"indécl.", "indecl."},
+	{"défectif", "defective"},
+	{"passif", "passive"},
+	{"contr.", "contr."},
+	{"prép.", "prep."},
+	{"prép", "prep."},
+	{"npr.", "prop.n."},
+	{"+gén.", "+gen."},
+	{"gén.", "gen."},
+	{"gén,", "gen.,"},
+	{"gén ", "gen. "},
+
+	// ---- Common words (shortest / most generic last) ----
+	{" nom ", " n. "},
+	{" ou ", " or "},
+	{" et ", " and "},
+	{" de l'", " of "},
+	{" de ", " of "},
+}
+
+// IndMorphLang returns the morphological-info string, translated for the
+// given language code. For "fr" (or if no translation is available) the
+// raw French string is returned as-is.
+func (l *Lemma) IndMorphLang(lang string) string {
+	if lang == "" || lang == "fr" {
+		return l.IndMorph
+	}
+	s := l.IndMorph
+	for _, t := range indMorphTranslations {
+		s = strings.ReplaceAll(s, t.fr, t.en)
+	}
+	// Normalize bare "impers" (no dot) that appears at end of string.
+	if strings.HasSuffix(s, "impers") {
+		s += "."
+	}
+	return s
+}
+
 // Model returns the resolved Model for this lemma.
 func (l *Lemma) Model() *Model {
 	return l.model

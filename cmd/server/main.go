@@ -111,7 +111,7 @@ func toLemmaJSON(l *collatinus.Lemma, lang string) lemmaJSON {
 		Key:         l.Key,
 		Form:        l.Gr,
 		POS:         posName(l.POS),
-		MorphoInfo:  l.IndMorph,
+		MorphoInfo:  l.IndMorphLang(lang),
 		HomonymNum:  l.HomonymNum,
 		Translation: l.Translation(lang),
 	}

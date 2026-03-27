@@ -185,6 +185,74 @@ func TestEncliticStripping(t *testing.T) {
 	}
 }
 
+func TestIndMorphLang(t *testing.T) {
+	tests := []struct {
+		indMorph string
+		lang     string
+		want     string
+	}{
+		// French passthrough.
+		{"is, ire, ii ou ivi, itum", "fr", "is, ire, ii ou ivi, itum"},
+		{"is, ire, ii ou ivi, itum", "", "is, ire, ii ou ivi, itum"},
+		// No French terms — unchanged.
+		{"a, um", "en", "a, um"},
+		// Simple word replacements.
+		{"is, ire, ii ou ivi, itum", "en", "is, ire, ii or ivi, itum"},
+		{"m. ou f.", "en", "m. or f."},
+		{"adj. et subst.", "en", "adj. and subst."},
+		// Abbreviations.
+		{"indécl.", "en", "indecl."},
+		{"prép.", "en", "prep."},
+		{"prép. + gén.", "en", "prep. + gen."},
+		{"prép. + gén. ou abl.", "en", "prep. + gen. or abl."},
+		{"npr. m.", "en", "prop.n. m."},
+		{"défectif", "en", "defective"},
+		{"+gén.", "en", "+gen."},
+		{"v. impers.", "en", "v. impers."},
+		{"v. impers", "en", "v. impers."},
+		// Passif de.
+		{"fis, fĭĕri, factus sum (passif de calefacio)", "en", "fis, fĭĕri, factus sum (passive of calefacio)"},
+		// Other "de" phrases.
+		{"supin de facio", "en", "supine of facio"},
+		{"supin en u de dicere", "en", "u-supine of dicere"},
+		{"inf. de possum", "en", "inf. of possum"},
+		{"comp. de sancte", "en", "comp. of sancte"},
+		{"abréviation de salutem [dat]", "en", "abbreviation of salutem [dat]"},
+		{"acc. grec de Styx, Stygos", "en", "Greek acc. of Styx, Stygos"},
+		{"acc. fem. sg. de ecqui, equae, ecquod", "en", "acc. fem. sg. of ecqui, equae, ecquod"},
+		{"abl. n. de propatulus", "en", "abl. n. of propatulus"},
+		{"a, um, part. fut. de sum", "en", "a, um, fut. part. of sum"},
+		{"fut. ant. de facio", "en", "fut. ant. of facio"},
+		{"acc. de ususfructus", "en", "acc. of ususfructus"},
+		{"2ème p. s. de inquam", "en", "2nd p. s. of inquam"},
+		// Full long phrase.
+		{"v. défectif utilisé seulement à la 3ème personne du singulier", "en",
+			"defective v. used only in 3rd person singular"},
+		// Parenthetical French.
+		{"gén, acc. vicem. Pas de nominatif", "en", "gen., acc. vicem. No nominative"},
+		{"i, n. (généralement au plur)", "en", "i, n. (generally plural)"},
+		{"ae, f. (souvent au pluriel)", "en", "ae, f. (often plural)"},
+		{"is, f. (surtout au pl.)", "en", "is, f. (mostly pl.)"},
+		{"i (toujours au pluriel)", "en", "i (always plural)"},
+		{"jurisjurandi (aussi en 2 mots)", "en", "jurisjurandi (also as 2 words)"},
+		// Combined: comparatif neutre ou averbial de elegans.
+		{"comparatif neutre ou averbial de elegans, antis", "en",
+			"neuter comparative or adverbial of elegans, antis"},
+		// Suivi du nom.
+		{"suivi du nom. ou de l'acc.", "en", "followed by nom. or of acc."},
+		// Extended lexicon terms.
+		{"antis (part. passé de l'inusité amaro)", "en", "antis (past part. of unused amaro)"},
+		{"ōnis, f. (inusité au nom.)", "en", "ōnis, f. (unused in nom.)"},
+	}
+	for _, tt := range tests {
+		l := &Lemma{IndMorph: tt.indMorph}
+		got := l.IndMorphLang(tt.lang)
+		if got != tt.want {
+			t.Errorf("IndMorphLang(%q, %q) = %q, want %q", tt.indMorph, tt.lang, got, tt.want)
+		}
+	}
+}
+
 func TestNormalize(t *testing.T) {
 	tests := []struct {
 		fn   string
