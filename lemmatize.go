@@ -9,6 +9,23 @@ import (
 // reWord matches a single Latin/Unicode word token.
 var reWord = regexp.MustCompile(`[a-zA-ZÀ-ÿ\x{0100}-\x{024F}\x{0300}-\x{036F}]+`)
 
+// baseRuneIndex returns the rune index in grq of the n-th base (non-combining)
+// character (0-indexed). Combining marks (e.g. U+0306 from Communes) are
+// skipped when counting. Returns len(grq) if n is out of range.
+func baseRuneIndex(grq []rune, n int) int {
+	base := 0
+	for i, r := range grq {
+		if unicode.Is(unicode.Mn, r) {
+			continue
+		}
+		if base == n {
+			return i
+		}
+		base++
+	}
+	return len(grq)
+}
+
 // enclitics are suffixes to strip when a form cannot be lemmatized.
 // Mirrors the suffixes map in LemCore constructor: ne, que, ue, ve, st.
 var enclitics = []string{"ne", "que", "ue", "ve", "st"}
@@ -108,13 +125,17 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 		if needDoubleI {
 			nf := r + "i" + d
 			nm := l.lemmatizeRaw(nf)
-			// Remove the extra 'i' we inserted from each returned grq
+			// Remove the extra 'i' we inserted from each returned grq.
+			// The inserted 'i' is the (rLen)-th base character (0-indexed)
+			// in the marked form. We must skip combining marks (e.g. the
+			// combining breve U+0306 added by Communes) when counting.
 			rLen := len([]rune(r))
 			for nl, lsl := range nm {
 				for k := range lsl {
 					grq := []rune(lsl[k].FormWithMarks)
-					if rLen > 0 && rLen-1 < len(grq) {
-						lsl[k].FormWithMarks = string(grq[:rLen-1]) + string(grq[rLen:])
+					idx := baseRuneIndex(grq, rLen)
+					if idx < len(grq) {
+						lsl[k].FormWithMarks = string(grq[:idx]) + string(grq[idx+1:])
 					}
 				}
 				result[nl] = append(result[nl], lsl...)
