@@ -70,6 +70,8 @@ type Lemma struct {
 	morphosIrregExcl []int
 	// NbOcc is the occurrence count from lemmes.la (field 6).
 	NbOcc int
+	// Extended is true for lemmas loaded from lem_ext.la (vs. lemmes.la).
+	Extended bool
 	// translations maps language code → translation string.
 	translations map[string]string
 }

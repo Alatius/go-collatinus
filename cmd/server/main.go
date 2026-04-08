@@ -168,9 +168,13 @@ func handleLemmatizeWord(lem *collatinus.Lemmatizer) http.HandlerFunc {
 			return
 		}
 		sentenceStart, _ := strconv.ParseBool(r.URL.Query().Get("sentence_start"))
+		extended, _ := strconv.ParseBool(r.URL.Query().Get("extended"))
 		lang := parseLang(r)
 
 		analyses := lem.LemmatizeWord(form, sentenceStart)
+		if !extended {
+			analyses = collatinus.FilterExtended(analyses)
+		}
 		status := http.StatusOK
 		if len(analyses) == 0 {
 			status = http.StatusNotFound
@@ -189,8 +193,9 @@ func handleLemmatizeText(lem *collatinus.Lemmatizer) http.HandlerFunc {
 			return
 		}
 		var body struct {
-			Text string `json:"text"`
-			Lang string `json:"lang"`
+			Text     string `json:"text"`
+			Lang     string `json:"lang"`
+			Extended bool   `json:"extended"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
 			writeError(w, http.StatusBadRequest, "body must be JSON with a non-empty 'text' field")
@@ -204,9 +209,13 @@ func handleLemmatizeText(lem *collatinus.Lemmatizer) http.HandlerFunc {
 		results := lem.LemmatizeText(body.Text)
 		out := make([]tokenResultJSON, 0, len(results))
 		for _, res := range results {
+			analyses := res.Analyses
+			if !body.Extended {
+				analyses = collatinus.FilterExtended(analyses)
+			}
 			out = append(out, tokenResultJSON{
 				Token:    res.Token,
-				Analyses: toAnalysesJSON(lem, res.Analyses, lang),
+				Analyses: toAnalysesJSON(lem, analyses, lang),
 			})
 		}
 		writeJSON(w, http.StatusOK, lemmatizeTextResponse{Results: out})
