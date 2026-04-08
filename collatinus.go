@@ -161,3 +161,23 @@ func (l *Lemmatizer) addRadical(r *Radical) {
 	key := Deramise(r.Gr)
 	l.radicals[key] = append(l.radicals[key], r)
 }
+
+// FilterExtended removes extension-only lemmas from results when
+// main-lexicon lemmas are also present. If all results come from the
+// extension, they are kept. Mirrors the C++ _extension filter in
+// LemCore::lemmatise.
+func FilterExtended(results map[*Lemma][]Analysis) map[*Lemma][]Analysis {
+	if len(results) == 0 {
+		return results
+	}
+	filtered := make(map[*Lemma][]Analysis)
+	for l, a := range results {
+		if !l.Extended {
+			filtered[l] = a
+		}
+	}
+	if len(filtered) == 0 {
+		return results // all results are from extension; keep them
+	}
+	return filtered
+}

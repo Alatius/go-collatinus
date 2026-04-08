@@ -342,22 +342,23 @@ func (l *Lemmatizer) substituteVars(line string) string {
 // loadLexicon reads bin/data/lemmes.la and builds l.lemmas and l.radicals.
 // Mirrors Lemmat::lisLexique.
 func (l *Lemmatizer) loadLexicon(dataDir string) error {
-	return l.loadLexiconFile(filepath.Join(dataDir, "lemmes.la"))
+	return l.loadLexiconFile(filepath.Join(dataDir, "lemmes.la"), false)
 }
 
 // loadExtendedLexicon reads bin/data/lem_ext.la if present.
 // Same format as lemmes.la but entries do not overwrite existing lemmas.
+// Lemmas loaded here are marked as Extended.
 func (l *Lemmatizer) loadExtendedLexicon(dataDir string) error {
 	path := filepath.Join(dataDir, "lem_ext.la")
 	if _, err := os.Stat(path); err != nil {
 		return nil // file not present, not an error
 	}
-	return l.loadLexiconFile(path)
+	return l.loadLexiconFile(path, true)
 }
 
 // loadLexiconFile reads a single lemmes.la-format file and registers
 // its lemmas and radicals. Existing lemmas are not overwritten.
-func (l *Lemmatizer) loadLexiconFile(path string) error {
+func (l *Lemmatizer) loadLexiconFile(path string, extended bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", filepath.Base(path), err)
@@ -375,6 +376,7 @@ func (l *Lemmatizer) loadLexiconFile(path string) error {
 		if lemma == nil {
 			continue
 		}
+		lemma.Extended = extended
 
 		// Do not overwrite existing lemmas
 		if _, exists := l.lemmas[lemma.Key]; exists {
