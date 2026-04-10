@@ -162,6 +162,98 @@ func TestLemmatizeWordNec(t *testing.T) {
 	}
 }
 
+// TestAssimilationFallback verifies that when a form has to be rewritten
+// (e.g. "attingo" → "adtingo") to be lemmatized, the returned marked form
+// is re-assimilated to match the caller's input. Mirrors the C++ lemmatiseM
+// case 2 post-processing with assimq/desassimq.
+func TestAssimilationFallback(t *testing.T) {
+	l, _ := New(dataDir)
+
+	findAdtingo := func(result map[*Lemma][]Analysis) *Lemma {
+		for lemma := range result {
+			if lemma.Key == "adtingo" {
+				return lemma
+			}
+		}
+		return nil
+	}
+
+	// "attingo" has no direct radical match (only "adting" and "attig" are
+	// registered); it must go through desassim → "adtingo" and then the
+	// resulting "ādtīngō̆" must be re-assimilated to "āttīngō̆".
+	result := l.LemmatizeWord("attingo", false)
+	lemma := findAdtingo(result)
+	if lemma == nil {
+		t.Fatalf("LemmatizeWord('attingo') did not find lemma adtingo; got %v", result)
+	}
+	var gotMarks []string
+	for _, a := range result[lemma] {
+		gotMarks = append(gotMarks, a.FormWithMarks)
+	}
+	hasAtt := false
+	for _, g := range gotMarks {
+		if strings.HasPrefix(g, "ātt") {
+			hasAtt = true
+			break
+		}
+	}
+	if !hasAtt {
+		t.Errorf("LemmatizeWord('attingo') expected an 'ātt...'-form for adtingo, got %v", gotMarks)
+	}
+
+	// "adtingo" is the un-assimilated input; the returned marked form must
+	// start with "ādt" (not be accidentally rewritten by desassim post-processing).
+	result = l.LemmatizeWord("adtingo", false)
+	lemma = findAdtingo(result)
+	if lemma == nil {
+		t.Fatalf("LemmatizeWord('adtingo') did not find lemma adtingo; got %v", result)
+	}
+	gotMarks = gotMarks[:0]
+	for _, a := range result[lemma] {
+		gotMarks = append(gotMarks, a.FormWithMarks)
+	}
+	hasAdt := false
+	for _, g := range gotMarks {
+		if strings.HasPrefix(g, "ādt") {
+			hasAdt = true
+			break
+		}
+	}
+	if !hasAdt {
+		t.Errorf("LemmatizeWord('adtingo') expected an 'ādt...'-form for adtingo, got %v", gotMarks)
+	}
+
+	// "adcedo" exercises the assim branch: lexicon has only the assimilated
+	// lemma "accedo", so assim("adcedo")="accedo" finds it, and the returned
+	// marked form "āccēdō̆" must be rewritten via desassimq to "ādcēdō̆" to
+	// reflect the caller's un-assimilated input.
+	result = l.LemmatizeWord("adcedo", false)
+	var accedo *Lemma
+	for lem := range result {
+		if lem.Key == "accedo" {
+			accedo = lem
+			break
+		}
+	}
+	if accedo == nil {
+		t.Fatalf("LemmatizeWord('adcedo') did not find lemma accedo; got %v", result)
+	}
+	gotMarks = gotMarks[:0]
+	for _, a := range result[accedo] {
+		gotMarks = append(gotMarks, a.FormWithMarks)
+	}
+	hasAdc := false
+	for _, g := range gotMarks {
+		if strings.HasPrefix(g, "ādc") {
+			hasAdc = true
+			break
+		}
+	}
+	if !hasAdc {
+		t.Errorf("LemmatizeWord('adcedo') expected an 'ādc...'-form for accedo, got %v", gotMarks)
+	}
+}
+
 func TestEncliticStripping(t *testing.T) {
 	l, _ := New(dataDir)
 	result := l.LemmatizeWord("populusque", false)

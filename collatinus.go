@@ -30,7 +30,8 @@ type Lemmatizer struct {
 	// languages maps language code (e.g. "fr") → language name.
 	languages map[string]string
 
-	// assims maps non-assimilated prefix → assimilated prefix.
+	// assims maps non-assimilated prefix → assimilated prefix (atone forms,
+	// used to probe the input form).
 	assims map[string]string
 	// assimsByKey is the same mapping as a list, sorted longest-first by
 	// key. Iterated by assim() so that the longest matching prefix wins
@@ -40,6 +41,14 @@ type Lemmatizer struct {
 	// assimsByVal is the same list, sorted longest-first by value.
 	// Iterated by desassim() for the same reason.
 	assimsByVal []assimEntry
+	// assimsq is the same mapping but with vowel-quantity marks preserved,
+	// used to rewrite marked result forms after a successful assim/desassim
+	// fallback. Mirrors LemCore::assimsq in the C++ source.
+	assimsq map[string]string
+	// assimsqByKey / assimsqByVal are the longest-first iteration orders
+	// for the quantity-marked table, consumed by assimq() / desassimq().
+	assimsqByKey []assimEntry
+	assimsqByVal []assimEntry
 
 	// contractions maps contracted ending → expanded ending.
 	contractions map[string]string
@@ -65,6 +74,7 @@ func New(dataDir string) (*Lemmatizer, error) {
 		variables:    make(map[string]string),
 		languages:    make(map[string]string),
 		assims:       make(map[string]string),
+		assimsq:      make(map[string]string),
 		contractions: make(map[string]string),
 	}
 
