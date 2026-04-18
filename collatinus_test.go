@@ -290,6 +290,35 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
+// TestAssimLongestFirst verifies that assim() picks the longest matching
+// prefix. "adsto" has two matching keys in the assim table ("ads" → "ass"
+// and "adst" → "ast"); the longer "adst" must win, transforming "adsto"
+// → "asto" so that the assim fallback finds the astutus adjective.
+// Previously Go's randomized map iteration sometimes picked "ads" first,
+// producing the nonsensical "assto" which matched nothing.
+func TestAssimLongestFirst(t *testing.T) {
+	l, _ := New(dataDir)
+	if got, want := l.assim("adsto"), "asto"; got != want {
+		t.Errorf("assim(\"adsto\") = %q, want %q", got, want)
+	}
+	result := l.LemmatizeWord("adsto", false)
+	var haveAdsto, haveAstutus bool
+	for lemma := range result {
+		switch lemma.Key {
+		case "adsto":
+			haveAdsto = true
+		case "astutus":
+			haveAstutus = true
+		}
+	}
+	if !haveAdsto {
+		t.Errorf("missing direct lemma 'adsto'")
+	}
+	if !haveAstutus {
+		t.Errorf("missing assim-fallback lemma 'astutus' — longest-first must pick 'adst' over 'ads'")
+	}
+}
+
 func TestListI(t *testing.T) {
 	tests := []struct {
 		in   string

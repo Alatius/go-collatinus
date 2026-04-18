@@ -32,9 +32,24 @@ type Lemmatizer struct {
 
 	// assims maps non-assimilated prefix → assimilated prefix.
 	assims map[string]string
+	// assimsByKey is the same mapping as a list, sorted longest-first by
+	// key. Iterated by assim() so that the longest matching prefix wins
+	// deterministically (Go's randomized map iteration could otherwise
+	// pick a shorter prefix, e.g. "ads" before "adst").
+	assimsByKey []assimEntry
+	// assimsByVal is the same list, sorted longest-first by value.
+	// Iterated by desassim() for the same reason.
+	assimsByVal []assimEntry
 
 	// contractions maps contracted ending → expanded ending.
 	contractions map[string]string
+}
+
+// assimEntry is a single (unassimilated, assimilated) pair from the
+// assimilation table, used in the sorted iteration slices.
+type assimEntry struct {
+	key string // e.g. "adt"
+	val string // e.g. "att"
 }
 
 // New loads all Collatinus data from dataDir (the path to bin/data/)

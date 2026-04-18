@@ -13,23 +13,31 @@ var reWord = regexp.MustCompile(`[a-zA-ZÀ-ÿ\x{0100}-\x{024F}\x{0300}-\x{036F}]
 // Mirrors the suffixes map in LemCore constructor: ne, que, ue, ve, st.
 var enclitics = []string{"ne", "que", "ue", "ve", "st"}
 
-// assim applies the assimilation table to a.
-// Mirrors Lemmat::assim.
+// assim applies the assimilation table to a, preferring the longest
+// matching prefix (e.g. "adst" → "ast" wins over "ads" → "ass" for an
+// input starting with "adst"). The longest-first iteration order is
+// built once at load time.
+//
+// Diverges from Lemmat::assim, which iterates Qt's QMap in ascending
+// key order: there "ads" is visited first and replaces "adsp"/"adsc"/
+// "adst" inputs with "ass..." before the longer keys ever get a chance.
+// Picking the longest match is deterministic and semantically correct.
 func (l *Lemmatizer) assim(a string) string {
-	for prefix, assimilated := range l.assims {
-		if strings.HasPrefix(a, prefix) {
-			return assimilated + a[len(prefix):]
+	for _, e := range l.assimsByKey {
+		if strings.HasPrefix(a, e.key) {
+			return e.val + a[len(e.key):]
 		}
 	}
 	return a
 }
 
-// desassim applies the reverse assimilation table to a.
-// Mirrors Lemmat::desassim.
+// desassim applies the reverse assimilation table to a, preferring the
+// longest matching (assimilated) prefix. See assim for notes on the
+// divergence from Lemmat::desassim's QMap iteration order.
 func (l *Lemmatizer) desassim(a string) string {
-	for unassim, assim := range l.assims {
-		if strings.HasPrefix(a, assim) {
-			return unassim + a[len(assim):]
+	for _, e := range l.assimsByVal {
+		if strings.HasPrefix(a, e.val) {
+			return e.key + a[len(e.val):]
 		}
 	}
 	return a

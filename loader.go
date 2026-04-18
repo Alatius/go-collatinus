@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -570,7 +571,8 @@ func (l *Lemmatizer) loadIrregs(dataDir string) error {
 	return sc.Err()
 }
 
-// loadAssims reads data/assimilations.la and populates l.assims.
+// loadAssims reads data/assimilations.la and populates l.assims and the
+// longest-first-sorted iteration slices l.assimsByKey / l.assimsByVal.
 // Format: "key:value" with quantity marks; stored as atone forms.
 // Mirrors LemCore::ajAssims.
 func (l *Lemmatizer) loadAssims(dataDir string) error {
@@ -594,7 +596,41 @@ func (l *Lemmatizer) loadAssims(dataDir string) error {
 		val := Atone(line[idx+1:])
 		l.assims[key] = val
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return err
+	}
+	l.buildAssimIterOrder()
+	return nil
+}
+
+// buildAssimIterOrder precomputes the two longest-first iteration orders
+// used by assim() and desassim(). Without a deterministic longest-first
+// order, Go's randomized map iteration could pick a shorter prefix (e.g.
+// "ads") before a longer one (e.g. "adst"), producing non-deterministic
+// — and semantically wrong — assimilation results. Ties are broken
+// lexicographically so the final order is stable.
+func (l *Lemmatizer) buildAssimIterOrder() {
+	l.assimsByKey = l.assimsByKey[:0]
+	l.assimsByVal = l.assimsByVal[:0]
+	for k, v := range l.assims {
+		e := assimEntry{key: k, val: v}
+		l.assimsByKey = append(l.assimsByKey, e)
+		l.assimsByVal = append(l.assimsByVal, e)
+	}
+	sort.Slice(l.assimsByKey, func(i, j int) bool {
+		a, b := l.assimsByKey[i], l.assimsByKey[j]
+		if len(a.key) != len(b.key) {
+			return len(a.key) > len(b.key)
+		}
+		return a.key < b.key
+	})
+	sort.Slice(l.assimsByVal, func(i, j int) bool {
+		a, b := l.assimsByVal[i], l.assimsByVal[j]
+		if len(a.val) != len(b.val) {
+			return len(a.val) > len(b.val)
+		}
+		return a.val < b.val
+	})
 }
 
 // loadContractions reads data/contractions.la and populates l.contractions.
