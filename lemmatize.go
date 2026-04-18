@@ -9,6 +9,23 @@ import (
 // reWord matches a single Latin/Unicode word token.
 var reWord = regexp.MustCompile(`[a-zA-ZÀ-ÿ\x{0100}-\x{024F}\x{0300}-\x{036F}]+`)
 
+// baseRuneIndex returns the rune index in grq of the n-th base (non-combining)
+// character (0-indexed). Combining marks (e.g. U+0306 from Communes) are
+// skipped when counting. Returns len(grq) if n is out of range.
+func baseRuneIndex(grq []rune, n int) int {
+	base := 0
+	for i, r := range grq {
+		if unicode.Is(unicode.Mn, r) {
+			continue
+		}
+		if base == n {
+			return i
+		}
+		base++
+	}
+	return len(grq)
+}
+
 // enclitics are suffixes to strip when a form cannot be lemmatized.
 // Mirrors the suffixes map in LemCore constructor: ne, que, ue, ve, st.
 var enclitics = []string{"ne", "que", "ue", "ve", "st"}
@@ -124,31 +141,40 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 			continue
 		}
 
-		// ii/ī ambiguity: try inserting an extra 'i'
-		// Cases:
-		// 1. d empty and r ends with 'i'
-		// 2. d starts with 'i' but not "ii", and r does not end with 'i'
-		// 3. r ends with 'i' but not "ii", and d does not start with 'i'
-		rEndsI := len(r) > 0 && r[len(r)-1] == 'i'
+		// ii/ī ambiguity: Latin sometimes collapses "ii" or "ji" to a
+		// single "i" at morpheme boundaries. When there is exactly one
+		// 'i' on the r–d boundary (and neither side already has "ii"),
+		// also try the form with an extra 'i' inserted.
+		rEndsI := strings.HasSuffix(r, "i")
+		dStartsI := strings.HasPrefix(d, "i")
 		rEndsII := strings.HasSuffix(r, "ii")
-		dStartsI := len(d) > 0 && d[0] == 'i'
 		dStartsII := strings.HasPrefix(d, "ii")
-
-		needDoubleI := (len(d) == 0 && rEndsI) ||
-			(dStartsI && !dStartsII && !rEndsI) ||
-			(rEndsI && !rEndsII && !dStartsI)
-
-		if needDoubleI {
+		if (rEndsI != dStartsI) && !rEndsII && !dStartsII {
 			nf := r + "i" + d
-			nm := l.lemmatizeRaw(nf)
-			// Remove the extra 'i' we inserted from each returned grq
 			rLen := len([]rune(r))
-			for nl, lsl := range nm {
+			for nl, lsl := range l.lemmatizeRaw(nf) {
 				for k := range lsl {
 					grq := []rune(lsl[k].FormWithMarks)
-					if rLen > 0 && rLen-1 < len(grq) {
-						lsl[k].FormWithMarks = string(grq[:rLen-1]) + string(grq[rLen:])
+					// The inserted 'i' sits at base index rLen (counting
+					// only non-combining runes, since Communes adds a
+					// combining breve after each bare vowel). Remove it —
+					// unless the preceding base char is 'j'/'J', in which
+					// case the matched Grq already spells the user's 'i'
+					// as 'j' there; the char at rLen is a real 'ĭ' that
+					// belongs next to it, and removing it would strand
+					// the j against a consonant (e.g. "conicio" → alt
+					// "cōnjĭcĭō̆" must not collapse to "cōnjcĭō̆").
+					idx := baseRuneIndex(grq, rLen)
+					if idx >= len(grq) {
+						continue
 					}
+					if rLen > 0 {
+						prev := grq[baseRuneIndex(grq, rLen-1)]
+						if prev == 'j' || prev == 'J' {
+							continue
+						}
+					}
+					lsl[k].FormWithMarks = string(grq[:idx]) + string(grq[idx+1:])
 				}
 				result[nl] = append(result[nl], lsl...)
 			}

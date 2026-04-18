@@ -254,6 +254,78 @@ func TestAssimilationFallback(t *testing.T) {
 	}
 }
 
+// TestDoubleIJAdjacent covers the ii-ambiguity handler when the matched
+// Grq spells the user's 'i' as 'j' (e.g. "conicio" → alt "cōnjĭcĭo"):
+// the char at the removal position is a real ĭ that belongs next to
+// the j, and removing it would strand the j against the following 'c'
+// ("cōnjcĭō̆"). The handler must keep the full marked form instead.
+//
+// The two positive cases pin the canonical bug. The bulk iteration
+// walks every iacio-compound with a j/i alt form in the lexicon and
+// asserts the invariant "no 'j' stranded before a consonant" on all
+// returned forms — guarding against the same structural bug on any
+// other entry in this family, even when only one of the j/i variants
+// is reached by the matching.
+func TestDoubleIJAdjacent(t *testing.T) {
+	lem, _ := New(dataDir)
+
+	type wantCase struct{ form, lemmaKey, want string }
+	wants := []wantCase{
+		{"conicio", "conicio", "cōnjĭcĭō̆"},
+		{"eicio", "eiicio", "ējĭcĭō̆"},
+	}
+	for _, c := range wants {
+		result := lem.LemmatizeWord(c.form, false)
+		var target *Lemma
+		for k := range result {
+			if k.Key == c.lemmaKey {
+				target = k
+				break
+			}
+		}
+		if target == nil {
+			t.Errorf("LemmatizeWord(%q) did not find lemma %q", c.form, c.lemmaKey)
+			continue
+		}
+		found := false
+		var got []string
+		for _, a := range result[target] {
+			got = append(got, a.FormWithMarks)
+			if a.FormWithMarks == c.want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("LemmatizeWord(%q) lemma %q: want form %q, got %v",
+				c.form, c.lemmaKey, c.want, got)
+		}
+	}
+
+	// All j/i iacio-compounds in the lexicon. Each is probed from both
+	// directions (i-form and j-form); every returned form_with_marks
+	// must not strand 'j' before a consonant.
+	forms := []string{
+		"abicio", "abjicio", "adicio", "adjicio",
+		"circumicio", "circumjicio", "conicio", "conjicio",
+		"deicio", "dejicio", "disicio", "disjicio",
+		"eicio", "ejicio", "inicio", "injicio",
+		"intericio", "interjicio", "obicio", "objicio",
+		"proicio", "projicio", "reicio", "rejicio",
+		"subicio", "subjicio", "superinicio", "superinjicio",
+		"traicio", "trajicio",
+	}
+	for _, form := range forms {
+		for _, as := range lem.LemmatizeWord(form, false) {
+			for _, a := range as {
+				if strings.Contains(a.FormWithMarks, "jc") {
+					t.Errorf("LemmatizeWord(%q): form %q has j stranded before c",
+						form, a.FormWithMarks)
+				}
+			}
+		}
+	}
+}
+
 func TestEncliticStripping(t *testing.T) {
 	l, _ := New(dataDir)
 	result := l.LemmatizeWord("populusque", false)
