@@ -13,7 +13,7 @@ var reWord = regexp.MustCompile(`[a-zA-ZÀ-ÿ\x{0100}-\x{024F}\x{0300}-\x{036F}]
 // Mirrors the suffixes map in LemCore constructor: ne, que, ue, ve, st.
 var enclitics = []string{"ne", "que", "ue", "ve", "st"}
 
-// assim applies the assimilation table to a, preferring the longest
+// assim applies the atone assimilation table to a, preferring the longest
 // matching prefix (e.g. "adst" → "ast" wins over "ads" → "ass" for an
 // input starting with "adst"). The longest-first iteration order is
 // built once at load time.
@@ -31,11 +31,36 @@ func (l *Lemmatizer) assim(a string) string {
 	return a
 }
 
-// desassim applies the reverse assimilation table to a, preferring the
-// longest matching (assimilated) prefix. See assim for notes on the
+// desassim applies the reverse atone assimilation table to a, preferring
+// the longest matching (assimilated) prefix. See assim for notes on the
 // divergence from Lemmat::desassim's QMap iteration order.
 func (l *Lemmatizer) desassim(a string) string {
 	for _, e := range l.assimsByVal {
+		if strings.HasPrefix(a, e.val) {
+			return e.key + a[len(e.val):]
+		}
+	}
+	return a
+}
+
+// assimq is the quantity-marked counterpart of assim. Used to rewrite the
+// marked result form after a desassim fallback so the returned grq matches
+// the caller's input. Mirrors LemCore::assimq, with the same longest-first
+// divergence described on assim.
+func (l *Lemmatizer) assimq(a string) string {
+	for _, e := range l.assimsqByKey {
+		if strings.HasPrefix(a, e.key) {
+			return e.val + a[len(e.key):]
+		}
+	}
+	return a
+}
+
+// desassimq is the quantity-marked counterpart of desassim. Used to
+// rewrite the marked result form after an assim fallback. Mirrors
+// LemCore::desassimq, with the same longest-first divergence.
+func (l *Lemmatizer) desassimq(a string) string {
+	for _, e := range l.assimsqByVal {
 		if strings.HasPrefix(a, e.val) {
 			return e.key + a[len(e.val):]
 		}
@@ -219,24 +244,36 @@ func (l *Lemmatizer) lemmatizeMEtape(form string, sentenceStart bool, etape int)
 		}
 
 	case 2:
-		// Assimilation and deassimilation (always tried)
+		// Assimilation and deassimilation. The input form is probed against
+		// the atone assims table; if a transformation applies, the recursive
+		// result's marked form is rewritten with the inverse *q operation so
+		// the returned grq reflects the caller's input. Mirrors LemCore::lemmatiseM
+		// case 2 (which uses mm.insert to replace rather than append).
 		fa := l.assim(form)
 		if fa != form {
-			for nl, lsl := range l.lemmatizeMEtape(fa, sentenceStart, 3) {
+			nmm := l.lemmatizeMEtape(fa, sentenceStart, 3)
+			for nl, lsl := range nmm {
+				for k := range lsl {
+					lsl[k].FormWithMarks = l.desassimq(lsl[k].FormWithMarks)
+				}
 				if mm == nil {
 					mm = make(map[*Lemma][]Analysis)
 				}
-				mm[nl] = append(mm[nl], lsl...)
+				mm[nl] = lsl
 			}
 			return mm
 		}
 		fd := l.desassim(form)
 		if fd != form {
-			for nl, lsl := range l.lemmatizeMEtape(fd, sentenceStart, 3) {
+			nmm := l.lemmatizeMEtape(fd, sentenceStart, 3)
+			for nl, lsl := range nmm {
+				for k := range lsl {
+					lsl[k].FormWithMarks = l.assimq(lsl[k].FormWithMarks)
+				}
 				if mm == nil {
 					mm = make(map[*Lemma][]Analysis)
 				}
-				mm[nl] = append(mm[nl], lsl...)
+				mm[nl] = lsl
 			}
 			return mm
 		}

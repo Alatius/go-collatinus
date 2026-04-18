@@ -571,9 +571,11 @@ func (l *Lemmatizer) loadIrregs(dataDir string) error {
 	return sc.Err()
 }
 
-// loadAssims reads data/assimilations.la and populates l.assims and the
-// longest-first-sorted iteration slices l.assimsByKey / l.assimsByVal.
-// Format: "key:value" with quantity marks; stored as atone forms.
+// loadAssims reads data/assimilations.la and populates both the atone
+// table (l.assims, used to probe the input) and the quantity-marked table
+// (l.assimsq, used to rewrite marked result forms after an assim/desassim
+// fallback). It also precomputes the longest-first iteration slices
+// consumed by assim/desassim/assimq/desassimq.
 // Mirrors LemCore::ajAssims.
 func (l *Lemmatizer) loadAssims(dataDir string) error {
 	f, err := os.Open(filepath.Join(dataDir, "assimilations.la"))
@@ -592,9 +594,10 @@ func (l *Lemmatizer) loadAssims(dataDir string) error {
 		if idx < 0 {
 			continue
 		}
-		key := Atone(line[:idx])
-		val := Atone(line[idx+1:])
-		l.assims[key] = val
+		keyQ := line[:idx]
+		valQ := line[idx+1:]
+		l.assimsq[keyQ] = valQ
+		l.assims[Atone(keyQ)] = Atone(valQ)
 	}
 	if err := sc.Err(); err != nil {
 		return err
@@ -603,34 +606,43 @@ func (l *Lemmatizer) loadAssims(dataDir string) error {
 	return nil
 }
 
-// buildAssimIterOrder precomputes the two longest-first iteration orders
-// used by assim() and desassim(). Without a deterministic longest-first
-// order, Go's randomized map iteration could pick a shorter prefix (e.g.
-// "ads") before a longer one (e.g. "adst"), producing non-deterministic
-// — and semantically wrong — assimilation results. Ties are broken
-// lexicographically so the final order is stable.
+// buildAssimIterOrder precomputes the longest-first iteration orders for
+// both the atone assim table and the quantity-marked assimsq table.
+// Without a deterministic longest-first order, Go's randomized map
+// iteration could pick a shorter prefix (e.g. "ads") before a longer
+// one (e.g. "adst"), producing non-deterministic — and semantically
+// wrong — assimilation results. Ties are broken lexicographically so
+// the final order is fully stable.
 func (l *Lemmatizer) buildAssimIterOrder() {
-	l.assimsByKey = l.assimsByKey[:0]
-	l.assimsByVal = l.assimsByVal[:0]
-	for k, v := range l.assims {
-		e := assimEntry{key: k, val: v}
-		l.assimsByKey = append(l.assimsByKey, e)
-		l.assimsByVal = append(l.assimsByVal, e)
+	l.assimsByKey, l.assimsByVal = sortedAssimEntries(l.assims)
+	l.assimsqByKey, l.assimsqByVal = sortedAssimEntries(l.assimsq)
+}
+
+// sortedAssimEntries returns two views of m sorted longest-first: byKey
+// is ordered by len(key) desc (used to match unassimilated prefixes),
+// byVal by len(val) desc (used to match assimilated prefixes). Ties are
+// broken lexicographically on the relevant field.
+func sortedAssimEntries(m map[string]string) (byKey, byVal []assimEntry) {
+	byKey = make([]assimEntry, 0, len(m))
+	for k, v := range m {
+		byKey = append(byKey, assimEntry{key: k, val: v})
 	}
-	sort.Slice(l.assimsByKey, func(i, j int) bool {
-		a, b := l.assimsByKey[i], l.assimsByKey[j]
+	byVal = append([]assimEntry(nil), byKey...)
+	sort.Slice(byKey, func(i, j int) bool {
+		a, b := byKey[i], byKey[j]
 		if len(a.key) != len(b.key) {
 			return len(a.key) > len(b.key)
 		}
 		return a.key < b.key
 	})
-	sort.Slice(l.assimsByVal, func(i, j int) bool {
-		a, b := l.assimsByVal[i], l.assimsByVal[j]
+	sort.Slice(byVal, func(i, j int) bool {
+		a, b := byVal[i], byVal[j]
 		if len(a.val) != len(b.val) {
 			return len(a.val) > len(b.val)
 		}
 		return a.val < b.val
 	})
+	return byKey, byVal
 }
 
 // loadContractions reads data/contractions.la and populates l.contractions.
