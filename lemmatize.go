@@ -168,13 +168,28 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 					if idx >= len(grq) {
 						continue
 					}
+					prevIdx := -1
 					if rLen > 0 {
-						prev := grq[baseRuneIndex(grq, rLen-1)]
+						prevIdx = baseRuneIndex(grq, rLen-1)
+						prev := grq[prevIdx]
 						if prev == 'j' || prev == 'J' {
 							continue
 						}
 					}
-					lsl[k].FormWithMarks = string(grq[:idx]) + string(grq[idx+1:])
+					// If the rune at idx carries combining marks (e.g. a
+					// long-or-short vowel encoded as 'ī' + U+0306), the
+					// usual slice would strip the base rune but leave the
+					// mark dangling on the preceding rune (e.g. "alius"
+					// gen → "ălĭ̆ŭs" with stacked breves). Remove the
+					// preceding base rune instead — that's the unmarked
+					// redundant 'i' from the radical's tail; keeping the
+					// marked vowel from the desinence preserves the
+					// quantity information.
+					if prevIdx >= 0 && idx+1 < len(grq) && unicode.Is(unicode.Mn, grq[idx+1]) {
+						lsl[k].FormWithMarks = string(grq[:prevIdx]) + string(grq[idx:])
+					} else {
+						lsl[k].FormWithMarks = string(grq[:idx]) + string(grq[idx+1:])
+					}
 				}
 				result[nl] = append(result[nl], lsl...)
 			}
