@@ -243,7 +243,35 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 // Mirrors LemCore::lemmatiseM using recursive etapes logic.
 // etape=0 is the entry point; higher etapes are more basic.
 func (l *Lemmatizer) lemmatizeM(form string, sentenceStart bool) map[*Lemma][]Analysis {
-	return l.lemmatizeMEtape(form, sentenceStart, 0)
+	return dedupAnalyses(l.lemmatizeMEtape(form, sentenceStart, 0))
+}
+
+// dedupAnalyses collapses analyses with identical (FormWithMarks,
+// MorphoIndex) within each lemma's list. Several lemmatization paths
+// can converge on the same analysis — e.g. the bidirectional
+// ii-ambiguity insertion fires at both the r-ends-with-i and the
+// d-starts-with-i splits, both recursing on the same modified form
+// and producing the same matches. We don't want those to surface as
+// separate entries.
+func dedupAnalyses(m map[*Lemma][]Analysis) map[*Lemma][]Analysis {
+	type key struct {
+		idx  int
+		form string
+	}
+	for lemma, list := range m {
+		seen := make(map[key]bool, len(list))
+		out := list[:0]
+		for _, a := range list {
+			k := key{a.MorphoIndex, a.FormWithMarks}
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, a)
+		}
+		m[lemma] = out
+	}
+	return m
 }
 
 // lemmatizeMEtape implements the etapes-based lemmatization.
