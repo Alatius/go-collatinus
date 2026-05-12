@@ -11,7 +11,7 @@ The original C++ source is at /Users/johan/Code/collatinus and should be used as
 go build ./... && go test ./...
 
 # Run the server
-go build ./cmd/server/ && ./server -data ./data -addr :8080
+go build -o bin/collatinus ./cmd/server && ./bin/collatinus -data ./data -addr :8080
 ```
 
 No external dependencies (pure Go, module `github.com/cours-de-latin/collatinus`).

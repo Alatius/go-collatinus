@@ -100,8 +100,29 @@ func (l *Lemmatizer) decontracte(d string) string {
 // It applies deramise to the form, then tries:
 // 1. irregular forms
 // 2. radical+desinence combinations
-// Mirrors Lemmat::lemmatise.
+// Loosely mirrors Lemmat::lemmatise, but the ii-ambiguity expansion
+// is recursive (the C++ uses a single-level r+"i" radical lookup) and
+// fires speculatively at every XOR-true split rather than only where
+// r is already a registered radical — see the ii-ambiguity block.
 func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
+	return l.lemmatizeRawCached(form, make(map[string]map[*Lemma][]Analysis))
+}
+
+// lemmatizeRawCached is the recursive worker. The shared cache memoizes
+// results by form so the ii-ambiguity recursion doesn't recompute the
+// same expanded form many times — adjacent splits around an 'i' produce
+// identical nf strings, and i-heavy inputs like "iniiciendissimi" would
+// otherwise blow up exponentially. The cache lives only for the
+// outermost call's tree, so there's no cross-token leak.
+//
+// Returned analyses are not mutated by callers (the ii-ambiguity
+// post-processing copies the Analysis struct before rewriting
+// FormWithMarks); the cached map is therefore safe to share.
+func (l *Lemmatizer) lemmatizeRawCached(form string, cache map[string]map[*Lemma][]Analysis) map[*Lemma][]Analysis {
+	if cached, ok := cache[form]; ok {
+		return cached
+	}
+	cacheKey := form // pre-deramise; vowel counts (below) depend on it
 	frMorphos := l.morphos["fr"] // for bounds checking
 	// Compute vowel counts from original form (before deramise)
 	lower := strings.ToLower(form)
@@ -136,15 +157,19 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 		r := string(runes[:i])
 		d := string(runes[i:])
 
-		rads, hasRad := l.radicals[r]
-		if !hasRad {
-			continue
-		}
-
 		// ii/ī ambiguity: Latin sometimes collapses "ii" or "ji" to a
 		// single "i" at morpheme boundaries. When there is exactly one
 		// 'i' on the r–d boundary (and neither side already has "ii"),
 		// also try the form with an extra 'i' inserted.
+		//
+		// The expansion is tried at every split, even when r itself is
+		// not a registered radical: for j/i compounds like "traicio" the
+		// alt's stem ("traiic") only becomes reachable after the form is
+		// expanded to "traiicio", and the relevant outer split (r="trai")
+		// has no rad of its own. The recursion's `!rEndsII && !dStartsII`
+		// guard bounds the depth (one 'i' is inserted per level, and
+		// further insertions are blocked once a side carries "ii").
+		rads := l.radicals[r]
 		rEndsI := strings.HasSuffix(r, "i")
 		dStartsI := strings.HasPrefix(d, "i")
 		rEndsII := strings.HasSuffix(r, "ii")
@@ -152,9 +177,9 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 		if (rEndsI != dStartsI) && !rEndsII && !dStartsII {
 			nf := r + "i" + d
 			rLen := len([]rune(r))
-			for nl, lsl := range l.lemmatizeRaw(nf) {
-				for k := range lsl {
-					grq := []rune(lsl[k].FormWithMarks)
+			for nl, lsl := range l.lemmatizeRawCached(nf, cache) {
+				for _, an := range lsl {
+					grq := []rune(an.FormWithMarks)
 					// The inserted 'i' sits at base index rLen (counting
 					// only non-combining runes, since Communes adds a
 					// combining breve after each bare vowel). Remove it —
@@ -163,9 +188,11 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 					// as 'j' there; the char at rLen is a real 'ĭ' that
 					// belongs next to it, and removing it would strand
 					// the j against a consonant (e.g. "conicio" → alt
-					// "cōnjĭcĭō̆" must not collapse to "cōnjcĭō̆").
+					// "cōnjĭcĭō̆" must not collapse to "cōnjcĭō̆"). Keep
+					// the alt-marked analysis unmodified in that case.
 					idx := baseRuneIndex(grq, rLen)
 					if idx >= len(grq) {
+						result[nl] = append(result[nl], an)
 						continue
 					}
 					prevIdx := -1
@@ -173,6 +200,7 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 						prevIdx = baseRuneIndex(grq, rLen-1)
 						prev := grq[prevIdx]
 						if prev == 'j' || prev == 'J' {
+							result[nl] = append(result[nl], an)
 							continue
 						}
 					}
@@ -185,14 +213,19 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 					// redundant 'i' from the radical's tail; keeping the
 					// marked vowel from the desinence preserves the
 					// quantity information.
+					modAn := an
 					if prevIdx >= 0 && idx+1 < len(grq) && unicode.Is(unicode.Mn, grq[idx+1]) {
-						lsl[k].FormWithMarks = string(grq[:prevIdx]) + string(grq[idx:])
+						modAn.FormWithMarks = string(grq[:prevIdx]) + string(grq[idx:])
 					} else {
-						lsl[k].FormWithMarks = string(grq[:idx]) + string(grq[idx+1:])
+						modAn.FormWithMarks = string(grq[:idx]) + string(grq[idx+1:])
 					}
+					result[nl] = append(result[nl], modAn)
 				}
-				result[nl] = append(result[nl], lsl...)
 			}
+		}
+
+		if len(rads) == 0 {
+			continue
 		}
 
 		des, hasDes := l.desinences[d]
@@ -236,6 +269,7 @@ func (l *Lemmatizer) lemmatizeRaw(form string) map[*Lemma][]Analysis {
 		}
 	}
 
+	cache[cacheKey] = result
 	return result
 }
 
@@ -248,11 +282,12 @@ func (l *Lemmatizer) lemmatizeM(form string, sentenceStart bool) map[*Lemma][]An
 
 // dedupAnalyses collapses analyses with identical (FormWithMarks,
 // MorphoIndex) within each lemma's list. Several lemmatization paths
-// can converge on the same analysis — e.g. the bidirectional
-// ii-ambiguity insertion fires at both the r-ends-with-i and the
-// d-starts-with-i splits, both recursing on the same modified form
-// and producing the same matches. We don't want those to surface as
-// separate entries.
+// can converge on the same analysis — most notably the speculative
+// ii-ambiguity insertion fires at every XOR-true split, and adjacent
+// splits typically recurse on the same expanded form, with one path
+// producing the post-processed (primary-style) variant and the other
+// keeping the unmodified (alt-marked) variant via the j-strand SKIP.
+// Both reach the dedup phase, where matching entries are collapsed.
 func dedupAnalyses(m map[*Lemma][]Analysis) map[*Lemma][]Analysis {
 	type key struct {
 		idx  int

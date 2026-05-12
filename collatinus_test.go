@@ -273,6 +273,25 @@ func TestDoubleIJAdjacent(t *testing.T) {
 	wants := []wantCase{
 		{"conicio", "conicio", "cōnjĭcĭō̆"},
 		{"eicio", "eiicio", "ējĭcĭō̆"},
+		// j/i iacio-compounds whose user-input i-form should also surface
+		// the alt-marked j-form. Reached via the ii-insertion recursion:
+		// the adjacent split (rLen+1) lands on the alt's 'ĭ' next to
+		// the 'j', which trips the j-strand SKIP at lemmatize.go and
+		// keeps the unmodified alt-marked analysis.
+		{"reicio", "reicio", "rējĭcĭō̆"},
+		{"abicio", "abicio", "ābjĭcĭō̆"},
+		{"deicio", "deicio", "dējĭcĭō̆"},
+		{"obicio", "obicio", "ōbjĭcĭō̆"},
+		{"subicio", "subicio", "sūbjĭcĭō̆"},
+		{"adicio", "adicio", "ādjĭcĭō̆"},
+		{"disicio", "disicio", "dīsjĭcĭō̆"},
+		{"proicio", "proicio", "prōjĭcĭō̆"},
+		{"inicio", "iniicio", "īnjĭcĭō̆"},
+		// Reachable only via speculative ii-insertion at non-radical
+		// splits (no rad at "trai"/"superin"), so any regression that
+		// re-introduces the !hasRad guard would drop these.
+		{"traicio", "traicio", "trājĭcĭō̆"},
+		{"superinicio", "superinicio", "sŭpĕrīnjĭcĭō̆"},
 	}
 	for _, c := range wants {
 		result := lem.LemmatizeWord(c.form, false)
