@@ -426,6 +426,10 @@ func TestIndMorphLang(t *testing.T) {
 		// Extended lexicon terms.
 		{"antis (part. passé de l'inusité amaro)", "en", "antis (past part. of unused amaro)"},
 		{"ōnis, f. (inusité au nom.)", "en", "ōnis, f. (unused in nom.)"},
+		// qqf (quelquefois) and mot grec.
+		{"ium, m. pl. (qqf. sing)", "en", "ium, m. pl. (sometimes sing)"},
+		{"ae, f., qqf Flaminia via", "en", "ae, f., sometimes Flaminia via"},
+		{"mot grec", "en", "Greek word"},
 	}
 	for _, tt := range tests {
 		l := &Lemma{IndMorph: tt.indMorph}

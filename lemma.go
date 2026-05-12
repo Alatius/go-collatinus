@@ -219,6 +219,11 @@ var indMorphTranslations = []struct{ fr, en string }{
 	{"inusité au nom.", "unused in nom."},
 	{"inusité", "unused"},
 
+	// ---- Miscellaneous French abbreviations ----
+	{"qqf.", "sometimes"},
+	{"qqf ", "sometimes "},
+	{"mot grec", "Greek word"},
+
 	// ---- "<description> de <word>" phrases (before generic " de ") ----
 	{"part. passé de l'", "past part. of "},
 	{"part. passé de ", "past part. of "},
